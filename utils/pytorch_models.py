@@ -2,6 +2,49 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class CNNModel(nn.Module):
+    def __init__(self, state_dim: int, one_hot_depth: int, out_dim: int):
+        super().__init__()
+        self.one_hot_depth = one_hot_depth
+        input_channels = one_hot_depth if one_hot_depth > 0 else 1
+        self.conv1 = nn.Conv1d(input_channels, 64, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv1d(64, 128, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv1d(128, 256, kernel_size=3, padding=1)
+        self.fc = nn.Linear(256 * state_dim, out_dim)
+
+    def forward(self, states_nnet):
+        # One-hot encoding if necessary
+        if self.one_hot_depth > 0:
+            x = F.one_hot(states_nnet.long(), self.one_hot_depth).permute(0, 2, 1).float()  # (batch, depth, state_dim)
+        else:
+            x = states_nnet.unsqueeze(1).float()  # (batch, 1, state_dim)
+        
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = x.view(x.size(0), -1)  # Flatten
+        x = self.fc(x)
+        return x
+class RNNModel(nn.Module):
+    def __init__(self, state_dim: int, one_hot_depth: int, hidden_dim: int, out_dim: int, num_layers: int):
+        super().__init__()
+        self.one_hot_depth = one_hot_depth
+        input_dim = one_hot_depth if one_hot_depth > 0 else 1
+        self.rnn = nn.RNN(input_dim, hidden_dim, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_dim, out_dim)
+
+    def forward(self, states_nnet):
+        # One-hot encoding if necessary
+        if self.one_hot_depth > 0:
+            x = F.one_hot(states_nnet.long(), self.one_hot_depth).float()  # (batch, state_dim, depth)
+        else:
+            x = states_nnet.unsqueeze(2).float()  # (batch, state_dim, 1)
+
+        x, _ = self.rnn(x)  # (batch, state_dim, hidden_dim)
+        x = x[:, -1, :]  # Use the last time step
+        x = self.fc(x)
+        return x
+
 class ResnetModel(nn.Module):
     def __init__(self, state_dim: int, one_hot_depth: int, h1_dim: int, resnet_dim: int, num_resnet_blocks: int,
                  out_dim: int, batch_norm: bool):
